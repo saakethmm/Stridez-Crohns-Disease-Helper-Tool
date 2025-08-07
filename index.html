@@ -79,6 +79,7 @@
   <!-- Consolidated export button -->
   <button onclick="exportAllCSVs()">Export Logs CSVs</button>
   <button onclick="showPage('settings')">Settings</button>
+  <button onclick="showPage('myRecipes')">My Recipies</button>
 </div>
 
 <!-- Modal to display logs -->
@@ -99,6 +100,10 @@
   <input type="text" id="ingredientInput" placeholder="e.g. avocado, bread" autocomplete="off" />
   <div id="suggestions" class="autocomplete-suggestions"></div>
   <div id="chips"></div>
+  <label>Or select a saved recipe:</label>
+  <select id="recipeDropdown">
+    <option value="">--Select a Recipe--</option>
+  </select>
   <label>Time eaten:</label>
   <input type="datetime-local" id="foodTime" />
   <button onclick="saveFood()">Save Food</button>
@@ -126,6 +131,21 @@
   <button onclick="showPage('main')">Back</button>
 </div>
 
+<!-- My Recipes Page -->
+<div id="myRecipes" class="page" style="position:relative;">
+  <h2>My Recipes</h2>
+  <label>Recipe Name:</label>
+  <input type="text" id="recipeNameInput" placeholder="e.g. Breakfast Smoothie" />
+  <label>Ingredients:</label>
+  <input type="text" id="recipeIngredientInput" placeholder="e.g. strawberry, yogurt" autocomplete="off" />  
+  <div id="recipeSuggestions" class="autocomplete-suggestions"></div>
+  <div id="recipeChips"></div>
+  <button onclick="saveRecipe()">Save Recipe</button>
+  <h3>Saved Recipes</h3>
+  <ul id="recipeList"></ul>
+  <button onclick="showPage('main')">Back</button>
+</div>
+
 <script>
 let ingredientList = [], selectedIngredients = [], selectedWelcomeIngredients = [];
 let safeFoods = [], triggerFoods = [];
@@ -150,6 +170,11 @@ function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('visible'));
   document.getElementById(id).classList.add('visible');
   if (id === "settings") loadSettings();
+  if (id === "myRecipes") {
+    renderRecipeList();
+    setupRecipeAutocomplete();
+  }
+  if (id === "logFood") populateRecipeDropdown();
 }
 
 // Save onboarding choices
@@ -237,6 +262,43 @@ function setupMainAutocomplete() {
   });
 }
 
+let currentRecipeIngredients = [];
+
+// Autocomplete for recipe creation
+function setupRecipeAutocomplete() {
+  const input = document.getElementById("recipeIngredientInput");
+  const suggestions = document.getElementById("recipeSuggestions");
+  const chips = document.getElementById("recipeChips");
+
+  input.addEventListener("input", () => {
+    const val = input.value.toLowerCase().split(/, */).pop().trim();
+    suggestions.innerHTML = "";
+    if (!val || !ingredientList.length) return;
+    const matches = ingredientList.filter(i => i.includes(val)).slice(0, 10);
+    matches.forEach(m => {
+      const div = document.createElement("div");
+      div.className = "autocomplete-suggestion";
+      div.textContent = m;
+      div.onclick = () => {
+        if (!currentRecipeIngredients.includes(m)) {
+          currentRecipeIngredients.push(m);
+          const chip = document.createElement("span");
+          chip.className = "chip";
+          chip.textContent = m;
+          chip.onclick = () => {
+            currentRecipeIngredients = currentRecipeIngredients.filter(x => x !== m);
+            chip.remove();
+          };
+          chips.appendChild(chip);
+        }
+        input.value = "";
+        suggestions.innerHTML = "";
+      };
+      suggestions.appendChild(div);
+    });
+  });
+}
+
 // Save food log
 function saveFood() {
   const time = document.getElementById("foodTime").value;
@@ -249,6 +311,35 @@ function saveFood() {
   document.getElementById("foodTime").value = "";
   alert("Food saved.");
   showPage("main");
+}
+
+//Save recipe
+function saveRecipe() {
+  const name = document.getElementById("recipeNameInput").value.trim();
+  if (!name || currentRecipeIngredients.length === 0) {
+    alert("Please provide a recipe name and ingredients.");
+    return;
+  }
+  const recipes = JSON.parse(localStorage.getItem("recipes") || "[]");
+  recipes.push({ name, ingredients: currentRecipeIngredients.slice() });
+  localStorage.setItem("recipes", JSON.stringify(recipes));
+  currentRecipeIngredients = [];
+  document.getElementById("recipeNameInput").value = "";
+  document.getElementById("recipeChips").innerHTML = "";
+  renderRecipeList();
+  alert("Recipe saved.");
+}
+
+//render recipes
+function renderRecipeList() {
+  const list = document.getElementById("recipeList");
+  list.innerHTML = "";
+  const recipes = JSON.parse(localStorage.getItem("recipes") || "[]");
+  recipes.forEach(recipe => {
+    const li = document.createElement("li");
+    li.textContent = `${recipe.name} (${recipe.ingredients.join(", ")})`;
+    list.appendChild(li);
+  });
 }
 
 // Render symptom sliders
@@ -407,60 +498,10 @@ function exportSymptomCSV() {
   return true;
 }
 
-async function exportSafeTriggerFoodsCSV() {
-  const safeFoods = JSON.parse(localStorage.getItem("safeFoods") || "[]");
-  const triggerFoods = JSON.parse(localStorage.getItem("triggerFoods") || "[]");
-
-  if (!safeFoods.length && !triggerFoods.length) {
-    alert("No safe or trigger foods to export.");
-    return false;
-  }
-
-  try {
-    const response = await fetch('ingredients.csv');
-    const csvText = await response.text();
-    const results = Papa.parse(csvText, { header: true, skipEmptyLines: true });
-    const ingredientsMap = {};
-    results.data.forEach(row => {
-      const desc = row.Description?.toLowerCase();
-      if (desc) ingredientsMap[desc] = row;
-    });
-
-    const headers = ["Category", ...Object.keys(results.data[0])];
-    const rows = [headers];
-
-    safeFoods.forEach(food => {
-      const data = ingredientsMap[food.toLowerCase()] || {};
-      const row = ["Safe", ...headers.slice(1).map(h => data[h] || "")];
-      rows.push(row);
-    });
-
-    triggerFoods.forEach(food => {
-      const data = ingredientsMap[food.toLowerCase()] || {};
-      const row = ["Trigger", ...headers.slice(1).map(h => data[h] || "")];
-      rows.push(row);
-    });
-
-    const csv = rows.map(r => r.map(x => `"${x}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "safe_trigger_foods.csv";
-    a.click();
-    URL.revokeObjectURL(a.href);
-    return true;
-  } catch (error) {
-    alert("Error exporting safe/trigger foods.");
-    console.error(error);
-    return false;
-  }
-}
-
 // Consolidated export function to export both CSVs one after another
 async function exportAllCSVs() {
   const foodExported = await exportFoodCSV();
   const symptomExported = exportSymptomCSV();
-  const safeTriggersExported = exportSafeTriggerFoodsCSV();
   // No additional alert needed since each export alerts on no data
 }
 
@@ -503,6 +544,40 @@ function showLogs() {
 // Close Logs modal
 function closeLogs() {
   document.getElementById("logsModal").style.display = "none";
+}
+
+//create recipe dropdown on food page
+function populateRecipeDropdown() {
+  const dropdown = document.getElementById("recipeDropdown");
+  dropdown.innerHTML = '<option value="">-- Select a Recipe --</option>';
+  const recipes = JSON.parse(localStorage.getItem("recipes") || "[]");
+  recipes.forEach((r, index) => {
+    const opt = document.createElement("option");
+    opt.value = index;
+    opt.textContent = r.name;
+    dropdown.appendChild(opt);
+  });
+
+  dropdown.onchange = function () {
+    const recipes = JSON.parse(localStorage.getItem("recipes") || "[]");
+    const selected = recipes[parseInt(this.value)];
+    if (selected) {
+      selected.ingredients.forEach(ing => {
+        if (!selectedIngredients.includes(ing)) {
+          selectedIngredients.push(ing);
+          const chip = document.createElement("span");
+          chip.className = "chip";
+          chip.textContent = ing;
+          chip.onclick = () => {
+            selectedIngredients = selectedIngredients.filter(x => x !== ing);
+            chip.remove();
+          };
+          document.getElementById("chips").appendChild(chip);
+        }
+      });
+      this.value = "";
+    }
+  };
 }
 
 </script>
