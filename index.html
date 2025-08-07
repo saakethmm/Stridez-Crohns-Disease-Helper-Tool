@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>Food Symptom Tracker</title>
   <style>
-    body { font-family: Arial; max-width: 700px; margin: auto; padding: 20px; }
+    body { font-family: Arial; max-width: 800px; margin: auto; padding: 20px; }
     .page { display: none; }
     .visible { display: block; }
     input, button, select, textarea { width: 100%; font-size: 1rem; padding: 8px; margin: 8px 0; }
@@ -16,18 +16,36 @@
     th, td { border:1px solid #aaa; padding:8px; text-align:left; }
     .severity { margin-left: 20px; }
     .hidden { display: none; }
+    .tag { font-size: 0.8rem; padding: 2px 6px; border-radius: 4px; margin-left: 4px; }
+    .safe { background-color: #cce5cc; color: #2e662e; }
+    .trigger { background-color: #f8d7da; color: #721c24; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
 </head>
 <body>
 
-<div id="main" class="page visible">
+<!-- Welcome Screen -->
+<div id="welcome" class="page">
+  <h2>Welcome to the Food Symptom Tracker!</h2>
+  <p>Before we begin, please mark any ingredients you already know are safe or trigger foods.</p>
+  <label>Search Ingredient:</label>
+  <input type="text" id="welcomeInput" placeholder="Start typing..." autocomplete="off" />
+  <div id="welcomeSuggestions" class="autocomplete-suggestions"></div>
+  <div id="welcomeChips"></div>
+  <button onclick="enterApp()">Start Using App</button>
+</div>
+
+<!-- Main Navigation -->
+<div id="main" class="page">
   <h1>Food Symptom Tracker</h1>
   <button onclick="showPage('logFood')">Log Food</button>
   <button onclick="showPage('logSymptoms')">Log Symptoms</button>
-  <button onclick="showPage('pastLogs')">View Logs</button>
+  <button onclick="exportFoodCSV()">Export Food Log CSV</button>
+  <button onclick="exportSymptomCSV()">Export Symptom Log CSV</button>
+  <button onclick="showPage('settings')">Settings</button>
 </div>
 
+<!-- Log Food Page -->
 <div id="logFood" class="page" style="position:relative;">
   <h2>Log Food</h2>
   <label>Enter ingredients (start typing):</label>
@@ -40,6 +58,7 @@
   <button onclick="showPage('main')">Back</button>
 </div>
 
+<!-- Log Symptoms Page -->
 <div id="logSymptoms" class="page">
   <h2>Log Symptoms</h2>
   <label for="symptomTime">Time symptoms started:</label>
@@ -49,235 +68,285 @@
   <button onclick="showPage('main')">Back</button>
 </div>
 
-<div id="pastLogs" class="page">
-  <h2>Past Logs & Risk Analysis</h2>
+<!-- Settings Page -->
+<div id="settings" class="page">
+  <h2>Safe & Trigger Foods</h2>
+  <h3>Safe Foods</h3>
+  <ul id="safeList"></ul>
+  <h3>Trigger Foods</h3>
+  <ul id="triggerList"></ul>
+  <button onclick="clearData()">Clear All Data</button>
   <button onclick="showPage('main')">Back</button>
-  <button onclick="exportCSV()">Export CSV</button>
-  <table id="logTable">
-    <tr><th>Food</th><th>Risk Score</th></tr>
-  </table>
 </div>
 
 <script>
-let ingredientMap = {}; // Stores info like fiber/fat
-let selectedIngredients = [];
+let ingredientList = [], selectedIngredients = [], selectedWelcomeIngredients = [];
+let safeFoods = [], triggerFoods = [];
 
+// Load ingredients from CSV
 async function loadIngredients() {
   try {
     const response = await fetch('ingredients.csv');
     const csvText = await response.text();
     const results = Papa.parse(csvText, { header: true, skipEmptyLines: true });
-    results.data.forEach(row => {
-      const desc = row["Description"]?.toLowerCase();
-      if (desc) {
-        ingredientMap[desc] = {
-          fiber: parseFloat(row["Data.Fiber"] || "0"),
-          monoFat: parseFloat(row["Data.Fat.Monosaturated Fat"] || "0")
-        };
-      }
-    });
+    ingredientList = results.data.map(row => row.Description?.toLowerCase()).filter(Boolean);
+    setupWelcomeAutocomplete();
+    setupMainAutocomplete();
   } catch (error) {
-    console.error("CSV load failed:", error);
-    alert("Failed to load ingredient list. Check ingredients.csv.");
+    alert("Error loading ingredient list.");
   }
 }
 loadIngredients();
 
-const ingredientInput = document.getElementById("ingredientInput");
-const suggestionsHost = document.getElementById("suggestions");
-const chipsHost = document.getElementById("chips");
-
-ingredientInput.addEventListener("input", () => {
-  const text = ingredientInput.value.toLowerCase().split(/, */).pop().trim();
-  suggestionsHost.innerHTML = "";
-  if (!text) return;
-  const matches = Object.keys(ingredientMap).filter(i => i.startsWith(text)).slice(0, 10);
-  matches.forEach(m => {
-    const div = document.createElement("div");
-    div.className = "autocomplete-suggestion";
-    div.textContent = m;
-    div.onclick = () => selectIngredient(m);
-    suggestionsHost.appendChild(div);
-  });
-});
-
-function selectIngredient(ing) {
-  if (!selectedIngredients.includes(ing)) {
-    selectedIngredients.push(ing);
-    const chip = document.createElement("span");
-    chip.className = "chip";
-    chip.textContent = ing;
-    chip.title = "Click to remove";
-    chip.onclick = () => {
-      selectedIngredients = selectedIngredients.filter(x => x !== ing);
-      chip.remove();
-    };
-    chipsHost.appendChild(chip);
-  }
-  ingredientInput.value = "";
-  suggestionsHost.innerHTML = "";
+// Show a page
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('visible'));
+  document.getElementById(id).classList.add('visible');
+  if (id === "settings") loadSettings();
 }
 
+// Save onboarding choices
+function enterApp() {
+  localStorage.setItem("safeFoods", JSON.stringify(safeFoods));
+  localStorage.setItem("triggerFoods", JSON.stringify(triggerFoods));
+  localStorage.setItem("welcomeCompleted", "true");
+  showPage("main");
+}
+
+// Autocomplete for welcome screen
+function setupWelcomeAutocomplete() {
+  const input = document.getElementById("welcomeInput");
+  const suggestions = document.getElementById("welcomeSuggestions");
+  const chips = document.getElementById("welcomeChips");
+
+  input.addEventListener("input", () => {
+    const val = input.value.toLowerCase().trim();
+    suggestions.innerHTML = "";
+    if (!val) return;
+    ingredientList.filter(i => i.includes(val)).slice(0, 10).forEach(m => {
+      const div = document.createElement("div");
+      div.className = "autocomplete-suggestion";
+      div.textContent = m;
+      div.onclick = () => {
+        const chip = document.createElement("div");
+        chip.className = "chip";
+        chip.textContent = m;
+        const safeBtn = document.createElement("button");
+        safeBtn.textContent = "Safe";
+        safeBtn.onclick = () => {
+          if (!safeFoods.includes(m)) safeFoods.push(m);
+          chip.remove();
+        };
+        const triggerBtn = document.createElement("button");
+        triggerBtn.textContent = "Trigger";
+        triggerBtn.onclick = () => {
+          if (!triggerFoods.includes(m)) triggerFoods.push(m);
+          chip.remove();
+        };
+        chip.append(" ", safeBtn, triggerBtn);
+        chips.appendChild(chip);
+        input.value = "";
+        suggestions.innerHTML = "";
+      };
+      suggestions.appendChild(div);
+    });
+  });
+}
+
+// Autocomplete for food logging
+function setupMainAutocomplete() {
+  const input = document.getElementById("ingredientInput");
+  const suggestions = document.getElementById("suggestions");
+  const chips = document.getElementById("chips");
+
+  input.addEventListener("input", () => {
+    const val = input.value.toLowerCase().split(/, */).pop().trim();
+    suggestions.innerHTML = "";
+    if (!val || !ingredientList.length) return;
+    const matches = ingredientList.filter(i => i.includes(val)).slice(0, 10);
+    matches.forEach(m => {
+      const div = document.createElement("div");
+      div.className = "autocomplete-suggestion";
+      div.textContent = m;
+      div.onclick = () => {
+        if (!selectedIngredients.includes(m)) {
+          selectedIngredients.push(m);
+          const chip = document.createElement("span");
+          chip.className = "chip";
+          chip.textContent = m;
+          chip.onclick = () => {
+            selectedIngredients = selectedIngredients.filter(x => x !== m);
+            chip.remove();
+          };
+          chips.appendChild(chip);
+        }
+        input.value = "";
+        suggestions.innerHTML = "";
+      };
+      suggestions.appendChild(div);
+    });
+  });
+}
+
+// Save food log
 function saveFood() {
   const time = document.getElementById("foodTime").value;
-  if (selectedIngredients.length === 0 || !time) return alert("Add ingredients and time.");
+  if (!selectedIngredients.length || !time) return alert("Add ingredients and time.");
   const logs = JSON.parse(localStorage.getItem("foodLogs") || "[]");
   logs.push({ ingredients: selectedIngredients.slice(), time });
   localStorage.setItem("foodLogs", JSON.stringify(logs));
   selectedIngredients = [];
-  chipsHost.innerHTML = "";
+  document.getElementById("chips").innerHTML = "";
   document.getElementById("foodTime").value = "";
   alert("Food saved.");
-  showPage('main');
+  showPage("main");
 }
 
+// Render symptom sliders
 const symptomsList = ["Abdominal pain", "Diarrhea", "Fatigue", "Bloating", "Joint pain", "Mouth sores", "Fever", "Constipation", "Nausea"];
 const container = document.getElementById("symptomContainer");
-
 function renderSymptoms() {
   container.innerHTML = "";
   symptomsList.forEach(sym => {
     const wrapper = document.createElement("div");
-    wrapper.classList.add("symptom");
-
     const cb = document.createElement("input");
     cb.type = "checkbox"; cb.id = `chk-${sym}`;
-
     const lb = document.createElement("label");
     lb.htmlFor = cb.id; lb.textContent = ` ${sym}`;
-
     const severityDiv = document.createElement("div");
     severityDiv.className = "severity hidden";
-
     const slider = document.createElement("input");
     slider.type = "range"; slider.min = 0; slider.max = 5; slider.value = 0;
-    slider.id = `slider-${sym}`;
-
     const out = document.createElement("span");
-    out.id = `out-${sym}`;
     out.textContent = "0";
-
     slider.oninput = () => out.textContent = slider.value;
-    cb.onchange = () => severityDiv.classList.toggle("hidden", !cb.checked);
-
     severityDiv.append("Severity: ", slider, out);
+    cb.onchange = () => severityDiv.classList.toggle("hidden", !cb.checked);
     wrapper.append(cb, lb, severityDiv);
     container.appendChild(wrapper);
   });
 }
 renderSymptoms();
 
+// Save symptom log
 function saveSymptoms() {
   const time = document.getElementById("symptomTime").value;
-  if (!time) return alert("Enter symptom time");
+  if (!time) return alert("Enter symptom time.");
   const selected = [];
-
   symptomsList.forEach(sym => {
     const cb = document.getElementById(`chk-${sym}`);
-    const slider = document.getElementById(`slider-${sym}`);
     if (cb.checked) {
+      const slider = cb.parentNode.querySelector("input[type=range]");
       selected.push({ symptom: sym, severity: parseInt(slider.value) });
     }
   });
-
-  if (!selected.length) return alert("Select symptoms");
-
+  if (!selected.length) return alert("Select symptoms.");
   const logs = JSON.parse(localStorage.getItem("symptomLogs") || "[]");
   logs.push({ time, symptoms: selected });
   localStorage.setItem("symptomLogs", JSON.stringify(logs));
-
   document.getElementById("symptomTime").value = "";
-  symptomsList.forEach(sym => {
-    document.getElementById(`chk-${sym}`).checked = false;
-    document.getElementById(`slider-${sym}`).value = 0;
-    document.getElementById(`out-${sym}`).textContent = "0";
-    document.getElementById(`slider-${sym}`).parentElement.classList.add("hidden");
-  });
-
+  renderSymptoms();
   alert("Symptoms saved.");
-  showPage('main');
+  showPage("main");
 }
 
-function getRiskData() {
-  const foods = JSON.parse(localStorage.getItem("foodLogs") || "[]");
-  const symptoms = JSON.parse(localStorage.getItem("symptomLogs") || "[]");
-  const foodRisk = {};
+// Load settings page
+function loadSettings() {
+  const safe = JSON.parse(localStorage.getItem("safeFoods") || "[]");
+  const trigger = JSON.parse(localStorage.getItem("triggerFoods") || "[]");
+  const safeList = document.getElementById("safeList");
+  const triggerList = document.getElementById("triggerList");
+  safeList.innerHTML = triggerList.innerHTML = "";
+  safe.forEach(f => {
+    const li = document.createElement("li");
+    li.textContent = f;
+    safeList.appendChild(li);
+  });
+  trigger.forEach(f => {
+    const li = document.createElement("li");
+    li.textContent = f;
+    triggerList.appendChild(li);
+  });
+}
 
-  symptoms.forEach(sym => {
-    const st = new Date(sym.time).getTime();
-    foods.forEach(f => {
-      const ft = new Date(f.time).getTime();
-      const delta = (st - ft) / (1000 * 60 * 60);
-      if (delta >= 0 && delta <= 6) {
-        const weight = 1 - delta / 6;
-        const sum = sym.symptoms.reduce((a, s) => a + s.severity, 0);
-        f.ingredients.forEach(ing => {
-          foodRisk[ing] = (foodRisk[ing] || 0) + weight * sum;
-        });
-      }
+// Clear all data
+function clearData() {
+  if (confirm("Are you sure you want to clear ALL local data?")) {
+    localStorage.clear();
+    location.reload();
+  }
+}
+
+// On load: check if user finished welcome
+window.addEventListener("load", () => {
+  const welcomeCompleted = localStorage.getItem("welcomeCompleted");
+  if (welcomeCompleted === "true") {
+    showPage("main");
+  } else {
+    showPage("welcome");
+  }
+});
+
+// Export Food CSV
+async function exportFoodCSV() {
+  const foodLogs = JSON.parse(localStorage.getItem("foodLogs") || "[]");
+  if (!foodLogs.length) return alert("No food logs to export.");
+
+  try {
+    const response = await fetch('ingredients.csv');
+    const csvText = await response.text();
+    const results = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+    const ingredientsMap = {};
+    results.data.forEach(row => {
+      const desc = row.Description?.toLowerCase();
+      if (desc) ingredientsMap[desc] = row;
+    });
+
+    const headers = ["Time", ...Object.keys(results.data[0])];
+    const rows = [headers];
+
+    foodLogs.forEach(entry => {
+      entry.ingredients.forEach(ing => {
+        const data = ingredientsMap[ing.toLowerCase()];
+        if (data) {
+          const row = [entry.time, ...headers.slice(1).map(h => data[h] || "")];
+          rows.push(row);
+        }
+      });
+    });
+
+    const csv = rows.map(r => r.map(x => `"${x}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "food_log.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (error) {
+    alert("Error exporting food log.");
+    console.error(error);
+  }
+}
+
+// Export Symptom CSV
+function exportSymptomCSV() {
+  const symptomLogs = JSON.parse(localStorage.getItem("symptomLogs") || "[]");
+  if (!symptomLogs.length) return alert("No symptom logs to export.");
+
+  const rows = [["Time", "Symptom", "Severity"]];
+  symptomLogs.forEach(entry => {
+    entry.symptoms.forEach(sym => {
+      rows.push([entry.time, sym.symptom, sym.severity]);
     });
   });
 
-  return foodRisk;
-}
-
-function loadPastLogs() {
-    const foods = JSON.parse(localStorage.getItem("foodLogs") || "[]");
-    const symptoms = JSON.parse(localStorage.getItem("symptomLogs") || "[]");
-    const foodRisk = {};
-    const foodSymptoms = {};
-    symptoms.forEach(sym => {
-        const st = new Date(sym.time).getTime();
-        foods.forEach(f => {
-            const ft = new Date(f.time).getTime();
-            const delta = (st - ft) / (1000 * 60 * 60);
-            if(delta >= 0 && delta <=6) {
-                const weight = 1 - delta /6;
-                f.ingredients.forEach(ing => {
-                    foodRisk[ing] = (foodRisk[ing] || 0) + weight * sym.symptoms.reduce((a, s) => a + s.severity, 0);
-                    foodSymptoms[ing] = foodSymptoms[ing] || {};
-                    sym.symptoms.forEach(s => {
-                        foodSymptoms[ing][s.symptom] = (foodSymptoms[ing][s.symptom] || 0) + weight * s.severity;
-                    });
-                });
-            }
-        });
-    });
-    const table = document.getElementById("logTable");
-    table.innerHTML = "<tr><th>Food</th><th>Risk Score</th><th>Associated Symptoms</th></tr>";
-    const arr = Object.entries(foodRisk).sort((a, b) => b[1] - a[1]);
-    if (!arr.length) {
-        table.innerHTML += "<tr><td colspan= '3' >No correlations</td></tr>";
-    } else {
-        arr.forEach(([f, r]) => {
-            const symptomsMap = foodSymptoms[f] || {};
-            const topSymptoms = Object.entries(symptomsMap)
-            .sort((a, b) => b[1] - a[1])
-            .map(([s, val]) => `${s} (${val.toFixed(1)})`)
-            .slice(0, 3)
-            .join(", ");
-            table.innerHTML += `<tr><td>${f}</td><td>${r.toFixed(2)}</td><td>${topSymptoms || "None"}</td></tr>`;
-        });
-    }
-}
-
-function exportCSV() {
-  const data = getRiskData();
-  const rows = [["Food", "Risk Score"], ...Object.entries(data).map(([f, r]) => [f, r.toFixed(2)])];
-  const txt = rows.map(r => r.join(",")).join("\n");
-  const blob = new Blob([txt], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
+  const csv = rows.map(r => r.map(x => `"${x}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
   const a = document.createElement("a");
-  a.href = url;
-  a.download = "food_risk.csv";
+  a.href = URL.createObjectURL(blob);
+  a.download = "symptom_log.csv";
   a.click();
-  URL.revokeObjectURL(url);
-}
-
-function showPage(id) {
-  document.querySelectorAll(".page").forEach(p => p.classList.remove("visible"));
-  document.getElementById(id).classList.add("visible");
-  if (id === "pastLogs") loadPastLogs();
+  URL.revokeObjectURL(a.href);
 }
 </script>
 
