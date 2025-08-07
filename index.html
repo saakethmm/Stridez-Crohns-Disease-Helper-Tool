@@ -407,10 +407,60 @@ function exportSymptomCSV() {
   return true;
 }
 
+async function exportSafeTriggerFoodsCSV() {
+  const safeFoods = JSON.parse(localStorage.getItem("safeFoods") || "[]");
+  const triggerFoods = JSON.parse(localStorage.getItem("triggerFoods") || "[]");
+
+  if (!safeFoods.length && !triggerFoods.length) {
+    alert("No safe or trigger foods to export.");
+    return false;
+  }
+
+  try {
+    const response = await fetch('ingredients.csv');
+    const csvText = await response.text();
+    const results = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+    const ingredientsMap = {};
+    results.data.forEach(row => {
+      const desc = row.Description?.toLowerCase();
+      if (desc) ingredientsMap[desc] = row;
+    });
+
+    const headers = ["Category", ...Object.keys(results.data[0])];
+    const rows = [headers];
+
+    safeFoods.forEach(food => {
+      const data = ingredientsMap[food.toLowerCase()] || {};
+      const row = ["Safe", ...headers.slice(1).map(h => data[h] || "")];
+      rows.push(row);
+    });
+
+    triggerFoods.forEach(food => {
+      const data = ingredientsMap[food.toLowerCase()] || {};
+      const row = ["Trigger", ...headers.slice(1).map(h => data[h] || "")];
+      rows.push(row);
+    });
+
+    const csv = rows.map(r => r.map(x => `"${x}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "safe_trigger_foods.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    return true;
+  } catch (error) {
+    alert("Error exporting safe/trigger foods.");
+    console.error(error);
+    return false;
+  }
+}
+
 // Consolidated export function to export both CSVs one after another
 async function exportAllCSVs() {
   const foodExported = await exportFoodCSV();
   const symptomExported = exportSymptomCSV();
+  const safeTriggersExported = exportSafeTriggerFoodsCSV();
   // No additional alert needed since each export alerts on no data
 }
 
