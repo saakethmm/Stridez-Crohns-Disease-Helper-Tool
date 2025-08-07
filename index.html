@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Food Symptom Tracker</title>
+  <title>[App Name Goes Here]</title>
   <style>
     body { font-family: Arial; max-width: 800px; margin: auto; padding: 20px; }
     .page { display: none; }
@@ -60,7 +60,7 @@
 
 <!-- Welcome Screen -->
 <div id="welcome" class="page">
-  <h2>Welcome to the Food Symptom Tracker!</h2>
+  <h2>Welcome to [Insert App Name Here]</h2>
   <p>Before we begin, please mark any ingredients you already know are safe or trigger foods.</p>
   <label>Search Ingredient:</label>
   <input type="text" id="welcomeInput" placeholder="Start typing..." autocomplete="off" />
@@ -71,7 +71,7 @@
 
 <!-- Main Navigation -->
 <div id="main" class="page">
-  <h1>Food Symptom Tracker</h1>
+  <h1>[Insert App Name Here]</h1>
   <button onclick="showPage('logFood')">Log Food</button>
   <button onclick="showPage('logSymptoms')">Log Symptoms</button>
   <!-- New View Logs Button -->
@@ -127,7 +127,6 @@
   <ul id="safeList"></ul>
   <h3>Trigger Foods</h3>
   <ul id="triggerList"></ul>
-  <button onclick="clearData()">Clear All Data</button>
   <button onclick="showPage('main')">Back</button>
 </div>
 
@@ -195,10 +194,10 @@ function setupWelcomeAutocomplete() {
     const val = input.value.toLowerCase().trim();
     suggestions.innerHTML = "";
     if (!val) return;
-    ingredientList.filter(i => i.includes(val)).slice(0, 10).forEach(m => {
+    fuzzyMatch(val, ingredientList).forEach(m => {
       const div = document.createElement("div");
       div.className = "autocomplete-suggestion";
-      div.textContent = m;
+      div.innerHTML = m.replace(new RegExp(`(${val})`, 'i'), '<strong>$1</strong>');
       div.onclick = () => {
         const chip = document.createElement("div");
         chip.className = "chip";
@@ -237,11 +236,10 @@ function setupMainAutocomplete() {
     const val = input.value.toLowerCase().split(/, */).pop().trim();
     suggestions.innerHTML = "";
     if (!val || !ingredientList.length) return;
-    const matches = ingredientList.filter(i => i.includes(val)).slice(0, 10);
-    matches.forEach(m => {
+    fuzzyMatch(val, ingredientList).forEach(m => {
       const div = document.createElement("div");
       div.className = "autocomplete-suggestion";
-      div.textContent = m;
+      div.innerHTML = m.replace(new RegExp(`(${val})`, 'i'), '<strong>$1</strong>');
       div.onclick = () => {
         if (!selectedIngredients.includes(m)) {
           selectedIngredients.push(m);
@@ -274,11 +272,10 @@ function setupRecipeAutocomplete() {
     const val = input.value.toLowerCase().split(/, */).pop().trim();
     suggestions.innerHTML = "";
     if (!val || !ingredientList.length) return;
-    const matches = ingredientList.filter(i => i.includes(val)).slice(0, 10);
-    matches.forEach(m => {
+    fuzzyMatch(val, ingredientList).forEach(m => {
       const div = document.createElement("div");
       div.className = "autocomplete-suggestion";
-      div.textContent = m;
+      div.innerHTML = m.replace(new RegExp(`(${val})`, 'i'), '<strong>$1</strong>');
       div.onclick = () => {
         if (!currentRecipeIngredients.includes(m)) {
           currentRecipeIngredients.push(m);
@@ -407,14 +404,6 @@ function loadSettings() {
     li.textContent = f;
     triggerList.appendChild(li);
   });
-}
-
-// Clear all data
-function clearData() {
-  if (confirm("Are you sure you want to clear ALL local data?")) {
-    localStorage.clear();
-    location.reload();
-  }
 }
 
 // On load: check if user finished welcome
@@ -578,6 +567,21 @@ function populateRecipeDropdown() {
       this.value = "";
     }
   };
+}
+
+//fuzzy search
+function fuzzyMatch(input, list, limit = 10) {
+  const val = input.toLowerCase();
+  return list
+    .map(item => {
+      const index = item.indexOf(val);
+      const score = index === -1 ? Infinity : index; // Lower is better
+      return { item, score };
+    })
+    .filter(entry => entry.score !== Infinity)
+    .sort((a, b) => a.score - b.score)
+    .slice(0, limit)
+    .map(entry => entry.item);
 }
 
 </script>
