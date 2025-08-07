@@ -19,6 +19,40 @@
     .tag { font-size: 0.8rem; padding: 2px 6px; border-radius: 4px; margin-left: 4px; }
     .safe { background-color: #cce5cc; color: #2e662e; }
     .trigger { background-color: #f8d7da; color: #721c24; }
+
+    /* Modal styles for logs view */
+    #logsModal {
+      display: none;
+      position: fixed;
+      top:0; left:0; width: 100vw; height: 100vh;
+      background: rgba(0,0,0,0.6);
+      z-index: 2000;
+      overflow: auto;
+    }
+    #logsContent {
+      background: white;
+      max-width: 90vw;
+      max-height: 90vh;
+      margin: 40px auto;
+      padding: 20px;
+      border-radius: 8px;
+      overflow-y: auto;
+    }
+    #logsContent h2 {
+      margin-top: 0;
+    }
+    #logsContent button.closeBtn {
+      float: right;
+      font-size: 1.2rem;
+      background: #ddd;
+      border: none;
+      padding: 4px 12px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    #logsContent table {
+      margin-bottom: 20px;
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
 </head>
@@ -40,9 +74,22 @@
   <h1>Food Symptom Tracker</h1>
   <button onclick="showPage('logFood')">Log Food</button>
   <button onclick="showPage('logSymptoms')">Log Symptoms</button>
-  <button onclick="exportFoodCSV()">Export Food Log CSV</button>
-  <button onclick="exportSymptomCSV()">Export Symptom Log CSV</button>
+  <!-- New View Logs Button -->
+  <button onclick="showLogs()">View Logs</button>
+  <!-- Consolidated export button -->
+  <button onclick="exportAllCSVs()">Export Logs CSVs</button>
   <button onclick="showPage('settings')">Settings</button>
+</div>
+
+<!-- Modal to display logs -->
+<div id="logsModal">
+  <div id="logsContent">
+    <button class="closeBtn" onclick="closeLogs()">Close ✕</button>
+    <h2>Food Logs</h2>
+    <div id="foodLogsTableContainer"></div>
+    <h2>Symptom Logs</h2>
+    <div id="symptomLogsTableContainer"></div>
+  </div>
 </div>
 
 <!-- Log Food Page -->
@@ -133,13 +180,15 @@ function setupWelcomeAutocomplete() {
         chip.textContent = m;
         const safeBtn = document.createElement("button");
         safeBtn.textContent = "Safe";
-        safeBtn.onclick = () => {
+        safeBtn.onclick = (e) => {
+          e.stopPropagation();
           if (!safeFoods.includes(m)) safeFoods.push(m);
           chip.remove();
         };
         const triggerBtn = document.createElement("button");
         triggerBtn.textContent = "Trigger";
-        triggerBtn.onclick = () => {
+        triggerBtn.onclick = (e) => {
+          e.stopPropagation();
           if (!triggerFoods.includes(m)) triggerFoods.push(m);
           chip.remove();
         };
@@ -290,7 +339,10 @@ window.addEventListener("load", () => {
 // Export Food CSV
 async function exportFoodCSV() {
   const foodLogs = JSON.parse(localStorage.getItem("foodLogs") || "[]");
-  if (!foodLogs.length) return alert("No food logs to export.");
+  if (!foodLogs.length) {
+    alert("No food logs to export.");
+    return false;
+  }
 
   try {
     const response = await fetch('ingredients.csv');
@@ -322,16 +374,21 @@ async function exportFoodCSV() {
     a.download = "food_log.csv";
     a.click();
     URL.revokeObjectURL(a.href);
+    return true;
   } catch (error) {
     alert("Error exporting food log.");
     console.error(error);
+    return false;
   }
 }
 
 // Export Symptom CSV
 function exportSymptomCSV() {
   const symptomLogs = JSON.parse(localStorage.getItem("symptomLogs") || "[]");
-  if (!symptomLogs.length) return alert("No symptom logs to export.");
+  if (!symptomLogs.length) {
+    alert("No symptom logs to export.");
+    return false;
+  }
 
   const rows = [["Time", "Symptom", "Severity"]];
   symptomLogs.forEach(entry => {
@@ -347,7 +404,57 @@ function exportSymptomCSV() {
   a.download = "symptom_log.csv";
   a.click();
   URL.revokeObjectURL(a.href);
+  return true;
 }
+
+// Consolidated export function to export both CSVs one after another
+async function exportAllCSVs() {
+  const foodExported = await exportFoodCSV();
+  const symptomExported = exportSymptomCSV();
+  // No additional alert needed since each export alerts on no data
+}
+
+function showLogs() {
+  const foodLogs = JSON.parse(localStorage.getItem("foodLogs") || "[]");
+  const symptomLogs = JSON.parse(localStorage.getItem("symptomLogs") || "[]");
+
+  const foodContainer = document.getElementById("foodLogsTableContainer");
+  const symptomContainer = document.getElementById("symptomLogsTableContainer");
+
+  // Build food logs table
+  if (foodLogs.length === 0) {
+    foodContainer.innerHTML = "<p>No food logs recorded.</p>";
+  } else {
+    let foodHtml = `<table><thead><tr><th>Time</th><th>Ingredients</th></tr></thead><tbody>`;
+    foodLogs.forEach(entry => {
+      foodHtml += `<tr><td>${entry.time}</td><td>${entry.ingredients.join(", ")}</td></tr>`;
+    });
+    foodHtml += "</tbody></table>";
+    foodContainer.innerHTML = foodHtml;
+  }
+
+  // Build symptom logs table
+  if (symptomLogs.length === 0) {
+    symptomContainer.innerHTML = "<p>No symptom logs recorded.</p>";
+  } else {
+    let symptomHtml = `<table><thead><tr><th>Time</th><th>Symptom</th><th>Severity</th></tr></thead><tbody>`;
+    symptomLogs.forEach(entry => {
+      entry.symptoms.forEach(sym => {
+        symptomHtml += `<tr><td>${entry.time}</td><td>${sym.symptom}</td><td>${sym.severity}</td></tr>`;
+      });
+    });
+    symptomHtml += "</tbody></table>";
+    symptomContainer.innerHTML = symptomHtml;
+  }
+
+  document.getElementById("logsModal").style.display = "block";
+}
+
+// Close Logs modal
+function closeLogs() {
+  document.getElementById("logsModal").style.display = "none";
+}
+
 </script>
 
 </body>
