@@ -90,9 +90,10 @@ def main():
     # calculate time delay for later use
     merged_df["time_delay_minutes"] = merged_df.apply(calculate_time_delay, axis=1)
 
-    # keep only numeric nutrient columns + risk factor + time delay + severity for training
+    # keep categorical info (risk factor + time delay + severity for training)
     numeric_cols = merged_df.select_dtypes(include=[np.number]).columns.tolist()
-    merged_df = merged_df[numeric_cols + ["risk_score"]]  # keep relevant cols
+    important_cols = numeric_cols + ["risk_score", "ingredients", "symptoms", "time_eaten", "symptom_start_time"]
+    merged_df = merged_df[[col for col in important_cols if col in merged_df.columns]]
 
     # save processed dataset for further use!
     merged_df.to_csv(OUTPUT_PATH, index=False)
