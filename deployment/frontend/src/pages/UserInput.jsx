@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import Papa from "papaparse";
+import { useNavigate } from "react-router-dom";
 
 // List of symptoms available for selection
 const symptomsList = [
@@ -22,8 +23,11 @@ const UserInput = () => {
   const [selectedSymptoms, setSelectedSymptoms] = useState({}); // Symptoms + severity
   const [symptomDate, setSymptomDate] = useState(""); // Symptom occurred datetime
   const [savedLogs, setSavedLogs] = useState([]); // Saved logs to display
+  const [loading, setLoading] = useState(false); // To disable buttons during requests
 
-  // --- Load food options from CSV on mount ---
+  const navigate = useNavigate();
+
+  // Load food options from CSV on mount
   useEffect(() => {
     fetch("/ingredients.csv")
       .then((res) => {
@@ -42,7 +46,7 @@ const UserInput = () => {
       });
   }, []);
 
-  // --- Handlers for symptom selection and severity changes ---
+  // Handlers for symptom selection and severity changes
   const handleSymptomToggle = (symptom) => {
     setSelectedSymptoms((prev) => ({
       ...prev,
@@ -57,8 +61,10 @@ const UserInput = () => {
     }));
   };
 
-  // --- Form submission handler ---
+  // --- Form submission handler: save data only, keep inputs intact ---
   const handleSubmit = async () => {
+    if (loading) return;
+
     if (!selectedFood) {
       alert("Please select a food item.");
       return;
@@ -87,11 +93,13 @@ const UserInput = () => {
     }));
 
     const payload = {
-      userId: null, // adjust if track users
+      userId: null,
       dishes,
       symptoms,
       submittedAt: new Date().toISOString(),
     };
+
+    setLoading(true);
 
     try {
       const res = await fetch("http://localhost:3000/user/input", {
@@ -110,23 +118,108 @@ const UserInput = () => {
       alert("Log saved successfully!");
       setSavedLogs((prev) => [data, ...prev]);
 
-      // Reset form fields
-      setSelectedFood("");
-      setFoodDate("");
-      setSelectedSymptoms({});
-      setSymptomDate("");
+      // KEEP input fields unchanged here, so user can still edit or analyze next
+
     } catch (err) {
       console.error("Submission error:", err);
       alert("Failed to submit data.");
+    } finally {
+      setLoading(false);
     }
   };
 
-  // --- JSX return ---
+  // --- Analyze button: save then analyze then navigate ---
+  const handleAnalyze = async () => {
+    if (loading) return;
+
+    if (!selectedFood) {
+      alert("Please select a food item.");
+      return;
+    }
+
+    const selectedSymptomsArray = Object.entries(selectedSymptoms).filter(
+      ([_, severity]) => severity !== undefined
+    );
+
+    if (selectedSymptomsArray.length === 0) {
+      alert("Please select at least one symptom.");
+      return;
+    }
+
+    const dishes = [
+      {
+        name: selectedFood,
+        consumedAt: foodDate || new Date().toISOString(),
+      },
+    ];
+
+    const symptoms = selectedSymptomsArray.map(([name, severity]) => ({
+      symptom: name,
+      severity,
+      occurredAt: symptomDate || new Date().toISOString(),
+    }));
+
+    const payload = {
+      userId: null,
+      dishes,
+      symptoms,
+      submittedAt: new Date().toISOString(),
+    };
+
+    setLoading(true);
+
+    try {
+      // Save first to get ID
+      const saveRes = await fetch("http://localhost:3000/user/input", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!saveRes.ok) {
+        const errorData = await saveRes.json();
+        alert("Error: " + errorData.error);
+        return;
+      }
+
+      const savedData = await saveRes.json();
+
+      // Then analyze
+      const gptRes = await fetch("http://localhost:3000/gpt/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dishes, symptoms }),
+      });
+
+      if (!gptRes.ok) {
+        alert("Failed to get advice from AI.");
+        return;
+      }
+
+      const gptData = await gptRes.json();
+
+      // Navigate with saved ID and state
+      navigate(`/user/output/${savedData._id}`, {
+        state: {
+          ingredients: gptData.ingredients,
+          advice: gptData.advice,
+        },
+      });
+    } catch (err) {
+      console.error("Analysis error:", err);
+      alert("Failed to get analysis.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="font-poppins text-gray-800 bg-gradient-to-b from-blue-100 to-white min-h-screen flex flex-col items-center">
+      
+      <img src="/logo.png" alt="Stridez Logo" className="h-20 mt-10 w-auto" />
       {/* Header */}
-      <h2 className="text-xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-800 to-blue-400 mt-20 text-center pb-20 pt-10">
-        Remissi, Your Personal Companion <br /> Log Your Food and Symptoms Here!
+      <h2 className="text-xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-800 to-blue-400 text-center pb-20 pt-10">
+        Crohnalyze, Your Personal Companion <br /> Log Your Food and Symptoms Here!
       </h2>
 
       {/* Food Log Section */}
@@ -137,6 +230,7 @@ const UserInput = () => {
             className="border border-blue-700 rounded px-3 py-2 text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 w-full md:w-1/2"
             value={selectedFood}
             onChange={(e) => setSelectedFood(e.target.value)}
+            disabled={loading}
           >
             <option value="">Select Food</option>
             {options.map((food, idx) => (
@@ -151,6 +245,7 @@ const UserInput = () => {
             className="border border-blue-700 rounded px-3 py-2 text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 w-full md:w-1/2"
             value={foodDate}
             onChange={(e) => setFoodDate(e.target.value)}
+            disabled={loading}
           />
         </div>
       </div>
@@ -174,6 +269,7 @@ const UserInput = () => {
                   className="w-3 h-3 border-2 border-blue-700 rounded appearance-none checked:bg-blue-700 checked:border-transparent focus:outline-none"
                   onChange={() => handleSymptomToggle(symptom)}
                   checked={selectedSymptoms[symptom] !== undefined}
+                  disabled={loading}
                 />
                 {symptom}
               </label>
@@ -188,6 +284,7 @@ const UserInput = () => {
                     handleSeverityChange(symptom, Number(e.target.value))
                   }
                   className="w-16 border p-1 rounded text-center"
+                  disabled={loading}
                 />
               )}
             </div>
@@ -199,16 +296,27 @@ const UserInput = () => {
           className="mt-4 border p-3 rounded-lg shadow-sm text-blue-700 w-76"
           value={symptomDate}
           onChange={(e) => setSymptomDate(e.target.value)}
+          disabled={loading}
         />
       </div>
 
-      {/* Submit Button */}
-      <button
-        onClick={handleSubmit}
-        className="mt-8 bg-blue-700 hover:bg-blue-800 text-white px-6 py-3 rounded-lg font-bold"
-      >
-        Submit
-      </button>
+      {/* Buttons: Submit + Result Analysis & Advice */}
+      <div className="mt-8 flex gap-4">
+        <button
+          onClick={handleSubmit}
+          className="bg-blue-700 hover:bg-blue-800 text-white px-6 py-3 rounded-lg font-bold disabled:opacity-50"
+          disabled={loading}
+        >
+          Submit
+        </button>
+        <button
+          onClick={handleAnalyze}
+          className="bg-blue-700 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold disabled:opacity-50"
+          disabled={loading}
+        >
+          Result Analysis & Advice
+        </button>
+      </div>
 
       {/* Logs Table */}
       {savedLogs.length > 0 && (

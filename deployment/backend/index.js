@@ -3,12 +3,14 @@ import { mongoDBURL, PORT } from './config.js';
 import mongoose from 'mongoose';
 import { FoodLog } from './models/foodModel.js';
 import cors from 'cors';
+import gptRoute from './gpt.js'
 
 const app = express();
 
 //middleware to parse JSON request bodies
 app.use(express.json());
 app.use(cors());
+app.use("/gpt", gptRoute);
 
 //route to save new user input
 app.post('/user/input', async (req, res) => {

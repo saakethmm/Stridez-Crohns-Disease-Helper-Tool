@@ -1,3 +1,6 @@
-export const PORT = 3000
+import dotenv from 'dotenv';
+dotenv.config();
 
-export const mongoDBURL = 'mongodb+srv://tramtran:FzpxgzLFUiyt8h9k@stridez.vqyo7et.mongodb.net/?retryWrites=true&w=majority&appName=Stridez'
+export const PORT = process.env.PORT || 3000;
+
+export const mongoDBURL = process.env.MONGODB_URL
