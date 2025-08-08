@@ -4,11 +4,11 @@ from sklearn.preprocessing import OneHotEncoder
 import os
 
 #initial config of datafiles
-BASE_FILE_PATH = "data\base_dataset.csv"
-USER_FOOD_PATH = "data\food_log.csv"
-USER_SYMPTOMS_PATH = "data\symptom_log.csv" 
-USER_SAFE_TRIGGER_PATH = "data\safe_trigger_foods.csv"
-OUTPUT_PATH = "data\merged_dataset.csv" #model should automatically create this file and store it in the data folder
+BASE_FILE_PATH = "deployment\data\base_dataset.csv"
+USER_FOOD_PATH = "deployment\data\food_log.csv"
+USER_SYMPTOMS_PATH = "deployment\data\symptom_log.csv" 
+USER_SAFE_TRIGGER_PATH = "deployment\data\safe_trigger_foods.csv"
+OUTPUT_PATH = "deployment\data\merged_dataset.csv" #model should automatically create this file and store it in the data folder
 
 DEFAULT_RISK = 5 #neutral starting risk
 

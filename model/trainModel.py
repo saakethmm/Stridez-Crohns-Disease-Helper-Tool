@@ -23,7 +23,7 @@ def train_random_forest(X_train, y_train, X_test, y_test):
     print("Random Forest model saved as 'models/rf_demo_model.pkl'")
 
 #load paths from before
-MERGED_DATA_PATH = "data\merged_dataset.csv"
+MERGED_DATA_PATH = "deployment\data\merged_dataset.csv"
 MODEL_SAVE_PATH = "models/model.h5" #where to save model for retrieval
 MAX_TRIALS = 5 # number of diff params sets to try
 EPOCHS = 30

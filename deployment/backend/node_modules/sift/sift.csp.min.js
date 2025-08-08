@@ -697,9 +697,6 @@
         if (isFunction(params)) {
             test = params;
         }
-        else if (!process.env.CSP_ENABLED) {
-            test = new Function("obj", "return " + params);
-        }
         else {
             throw new Error("In CSP mode, sift does not support strings in \"$where\" condition");
         }
@@ -778,4 +775,4 @@
     Object.defineProperty(exports, '__esModule', { value: true });
 
 }));
-//# sourceMappingURL=index.js.map
+//# sourceMappingURL=sift.csp.min.js.map
