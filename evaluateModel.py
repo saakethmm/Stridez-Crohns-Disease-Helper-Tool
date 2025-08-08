@@ -99,7 +99,7 @@ print("\n Final CSV saved as final_predictions.csv")
 #Import mealGenerator
 from mealGenerator import generate_meal_recommendations
 
-# After your evaluation and saving final CSV with predictions:
+# After  evaluation and saving final CSV with predictions:
 recommendations = generate_meal_recommendations("merged_dataset_with_symptoms.csv", "gut_friendly_recipes.csv")
 print("\n===== Meal Recommendations =====")
 print(recommendations)
