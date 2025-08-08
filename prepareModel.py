@@ -87,6 +87,14 @@ def main():
         tolerance=pd.Timedelta("6h")  # only match symptoms within 6 hours
     )
 
+    # Capture the meal/ingredients linked to each symptom
+    if "ingredients" in merged_df.columns:
+        merged_df["recent_food"] = merged_df["ingredients"]
+    elif "Meal" in merged_df.columns:  # if you have a Meal column instead
+        merged_df["recent_food"] = merged_df["Meal"]
+    else:
+        merged_df["recent_food"] = "N/A"
+
     # calculate time delay for later use
     merged_df["time_delay_minutes"] = merged_df.apply(calculate_time_delay, axis=1)
 
@@ -99,3 +107,12 @@ def main():
     merged_df.to_csv(OUTPUT_PATH, index=False)
     print(f"Merged dataset successfully saved to {OUTPUT_PATH}")
 
+    # save processed dataset for further use!
+    merged_df.to_csv(OUTPUT_PATH, index=False)
+    print(f"Merged dataset successfully saved to {OUTPUT_PATH}")
+
+    # also save separate symptom correlation file for LLM 
+    correlation_cols = ["time_eaten", "ingredients", "symptom_start_time", "symptoms", "time_delay_minutes"]
+    symptom_corr_df = merged_df[[col for col in correlation_cols if col in merged_df.columns]].dropna(subset=["symptoms"])
+    symptom_corr_df.to_csv("data/symptom_correlations.csv", index=False)
+    print("Symptom correlations saved to data/symptom_correlations.csv")
