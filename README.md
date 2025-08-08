@@ -9,4 +9,4 @@ This project aims to help by tracking foods and correlating them with symptoms. 
  - Highlight foods that appear safe to eat.
  - Provide personalized recommendations for trying new foods with lower risk.
 
-Our app, Chronalyze, is intended to give users a streamlined, intelligent way to make informed food choices and improve their quality of life.
+Our app, Crohnalyze, is intended to give users a streamlined, intelligent way to make informed food choices and improve their quality of life.
