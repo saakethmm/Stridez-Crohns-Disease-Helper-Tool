@@ -12,6 +12,8 @@ from sklearn.ensemble import RandomForestRegressor
 import joblib
 #imports
 
+os.makedirs("models", exist_ok=True) #automatically creates folder to save model in
+
 #trains prelim data model based on mit guys (peter) suggestion 
 def train_random_forest(X_train, y_train, X_test, y_test):
     print("Training Random Forest for demo phase...")
@@ -23,8 +25,8 @@ def train_random_forest(X_train, y_train, X_test, y_test):
     print("Random Forest model saved as 'models/rf_demo_model.pkl'")
 
 #load paths from before
-MERGED_DATA_PATH = "deployment\data\merged_dataset.csv"
-MODEL_SAVE_PATH = "models/model.h5" #where to save model for retrieval
+MERGED_DATA_PATH = r"..\deployment\data\merged_dataset.csv"
+MODEL_SAVE_PATH = r"models/model.h5" #where to save model for retrieval
 MAX_TRIALS = 5 # number of diff params sets to try
 EPOCHS = 30
 BATCH_SIZE = 32
@@ -35,33 +37,59 @@ if not os.path.exists(MERGED_DATA_PATH):
 
 df = pd.read_csv(MERGED_DATA_PATH)
 print(f"Loaded Merged Dataset: {df.shape}")
+print("Columns in dataframe:", df.columns.tolist())
+
 MIN_SAMPLES_FOR_NN = 100  # set threshold number of samples to switch to neural net
 
 
-
 #define the inputs and outputs
-feature_cols = [col for col in df.columns if col not in ["risk factor", "classification"]]
+# Select only numeric columns as features for now
+feature_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+
+# Remove target columns if present
+for target_col in ["risk_score", "risk factor", "classification"]:
+    if target_col in feature_cols:
+        feature_cols.remove(target_col)
+
+print(f"Using feature columns: {feature_cols}")
+
 X = df[feature_cols].values
-y_risk = df["risk factor"].values
 
-#encode the classification models
-if df["classification"].dtype == object:
-    le = LabelEncoder()
-    y_class = le.fit_transform(df["classification"])
+if "risk_score" in df.columns:
+    y_risk = df["risk_score"].values
 else:
-    y_class = df["classification"].values
+    raise KeyError("Target column 'risk_score' not found in dataframe")
 
 
-#split data
-X_train, X_test, y_risk_train, y_risk_test, y_class_train, y_class_test = train_test_split(
-    X, y_risk, y_class, test_size=0.2, random_state=42
-)
+#encode the classification models with safe check for columns
+if "classification" in df.columns:
+    if df["classification"].dtype == object:
+        le = LabelEncoder()
+        y_class = le.fit_transform(df["classification"])
+    else:
+        y_class = df["classification"].values
+else:
+    print("Warning: 'classification' column not found in dataset. Skipping classification task.")
+    y_class = None
+
+
+#split data (no more classification just risk output bc not enough data/ycolumnn)
+if y_class is not None:
+    X_train, X_test, y_risk_train, y_risk_test, y_class_train, y_class_test = train_test_split(
+        X, y_risk, y_class, test_size=0.2, random_state=42
+    )
+else:
+    X_train, X_test, y_risk_train, y_risk_test = train_test_split(
+        X, y_risk, test_size=0.2, random_state=42
+    )
+
 
 # scale
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
+joblib.dump(scaler, "models/scaler.pkl")
 
 # define input dim after scaling
 input_dim = X_train_scaled.shape[1]
@@ -105,10 +133,8 @@ class RiskHyperModel(HyperModel):
     
 #random forest dataset model trainig here
 if len(df) < MIN_SAMPLES_FOR_NN:
-    # train random forest only
     train_random_forest(X_train_scaled, y_risk_train, X_test_scaled, y_risk_test)
 else:
-    # train neural net with tuner
     hypermodel = RiskHyperModel(input_shape=input_dim)
 
     tuner = RandomSearch(
@@ -120,13 +146,22 @@ else:
         project_name='risk_factor_tuning'
     )
 
-    tuner.search(
-        X_train_scaled,
-        {"risk_output": y_risk_train, "class_output": y_class_train},
-        validation_data=(X_test_scaled, {"risk_output": y_risk_test, "class_output": y_class_test}),
-        epochs=EPOCHS,
-        batch_size=BATCH_SIZE
-    )
+    if y_class is not None:
+        tuner.search(
+            X_train_scaled,
+            {"risk_output": y_risk_train, "class_output": y_class_train},
+            validation_data=(X_test_scaled, {"risk_output": y_risk_test, "class_output": y_class_test}),
+            epochs=EPOCHS,
+            batch_size=BATCH_SIZE
+        )
+    else:
+        tuner.search(
+            X_train_scaled,
+            {"risk_output": y_risk_train},
+            validation_data=(X_test_scaled, {"risk_output": y_risk_test}),
+            epochs=EPOCHS,
+            batch_size=BATCH_SIZE
+        )
 
     best_model = tuner.get_best_models(num_models=1)[0]
     best_model.save(MODEL_SAVE_PATH)

@@ -1,27 +1,43 @@
 
-# evaluateModel.py IMPROVED VERSION
+# evaluateModel.py 
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from tensorflow.keras.models import load_model
+import joblib
 
 # =======================
 # 1. Load Data & Model
 # =======================
-model = load_model("model.h5")
-df = pd.read_csv("merged_dataset.csv")
+df = pd.read_csv(r"..\deployment\data\merged_dataset.csv")
 
-# Assumming  already preprocessed/encoded during training
-X = df.drop(columns=["Meal", "Risk_score", "Symptoms", "Ingredients", "Nutrients"], errors="ignore")
-meals = df["Meal"]
+# Select numeric feature columns exactly like during training
+feature_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+
+# Remove your target columns if they are numeric and present
+for col in ["risk_score", "risk factor", "classification"]:
+    if col in feature_cols:
+        feature_cols.remove(col)
+
+# Prepare X for prediction
+X = df[feature_cols]
+
+# Load scaler used during training and apply it here
+scaler = joblib.load("models/scaler.pkl")  # Make sure you saved this during training!
+
+X_scaled = scaler.transform(X)
+
+# Load trained model
+rf_model = joblib.load(r"models/rf_demo_model.pkl")
+
 ingredients_col = df["Ingredients"] if "Ingredients" in df.columns else None
 nutrients_col = df["Nutrients"] if "Nutrients" in df.columns else None
 
-# =======================
-# 2. Predict Risk Factors
-# =======================
-predicted_risk = model.predict(X).flatten()
+
+# Predict risk
+predicted_risk = rf_model.predict(X_scaled)
+
 df["PredictedRisk"] = predicted_risk
 
 # Classification thresholds
@@ -36,12 +52,12 @@ def classify_risk(score):
 df["RiskClass"] = df["PredictedRisk"].apply(classify_risk)
 
 # =======================
-# 3. Sorted Meal Risk Table
+# 3. Sorted Description Risk Table
 # =======================
-meal_risk_df = df[["Meal", "PredictedRisk", "RiskClass"]].drop_duplicates()
+meal_risk_df = df[["Description", "PredictedRisk", "RiskClass"]].drop_duplicates()
 meal_risk_df = meal_risk_df.sort_values(by="PredictedRisk", ascending=False)
 
-print("\n=== Meal Risk Table (Sorted) ===")
+print("\n===  Risk Table (Sorted) ===")
 print(meal_risk_df)
 
 # =======================
@@ -97,127 +113,10 @@ if nutrients_col is not None:
 df.to_csv("final_predictions.csv", index=False)
 print("\n Final CSV saved as final_predictions.csv")
 #Import mealGenerator
-from mealGenerator import generate_meal_recommendations
+# from mealGenerator import generate_meal_recommendations
 
-# After  evaluation and saving final CSV with predictions:
-recommendations = generate_meal_recommendations("merged_dataset_with_symptoms.csv", "gut_friendly_recipes.csv")
-print("\n===== Meal Recommendations =====")
-print(recommendations)
+# # After  evaluation and saving final CSV with predictions:
+# recommendations = generate_meal_recommendations("merged_dataset_with_symptoms.csv", "gut_friendly_recipes.csv")
+# print("\n===== Meal Recommendations =====")
+# print(recommendations)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# import pandas as pd
-# import numpy as np
-# import matplotlib.pyplot as plt
-# import seaborn as sns
-
-# from tensorflow.keras.models import load_model
-# from sklearn.metrics import confusion_matrix
-# import joblib
-
-# # ----------------- STEP 1: Load Model & Preprocessors -----------------
-# model = load_model("model.h5")
-# tfidf = joblib.load("tfidf_ingredients.pkl")
-# time_encoder = joblib.load("time_encoder.pkl")
-
-# # ----------------- STEP 2: Load Evaluation Data -----------------
-# data = pd.read_csv("merged_dataset.csv")
-
-# # Optional: Drop any NaNs if needed
-# data = data.dropna(subset=["ingredients", "time_eaten", "label"])
-
-# # ----------------- STEP 3: Prepare Features -----------------
-# # TF-IDF for ingredients
-# ingredient_features = tfidf.transform(data["ingredients"]).toarray()
-
-# # One-hot encode time_eaten
-# time_features = time_encoder.transform(data[["time_eaten"]]).toarray()
-
-# # Combine all features
-# X_eval = np.concatenate([ingredient_features, time_features], axis=1)
-
-# # Prepare labels (one-hot encoded)
-# y_eval = pd.get_dummies(data["label"]).values
-
-# # ----------------- STEP 4: Evaluate Model -----------------
-# test_loss, test_acc = model.evaluate(X_eval, y_eval, verbose=0)
-# print(f"Evaluation Accuracy: {test_acc:.4f}")
-
-# # ----------------- STEP 5: Predict -----------------
-# y_pred_probs = model.predict(X_eval)
-# y_pred_classes = np.argmax(y_pred_probs, axis=1)
-# y_true_classes = np.argmax(y_eval, axis=1)
-
-
-# # ----------------- STEP 6: Add Predictions to CSV -----------------
-# data["risk_score"] = y_pred_probs[1, 10]   # Probability of Unsafe
-# data["classification"] = y_pred_classes  #  1 = Safe, 10 = Unsafe
-
-# # Save final predictions
-# data.to_csv("final_predictions.csv", index=False)
-
-# # ----------------- STEP 7: Ingredient Risk Bar Chart -----------------
-# from collections import defaultdict
-
-# ingredient_risks = defaultdict(list)
-
-# # Loop over each row and assign risk score to each ingredient
-# for i, row in data.iterrows():
-#     ingredients = row["ingredients"].split(",")
-#     score = row["risk_score"]
-#     for ing in ingredients:
-#         ing = ing.strip().lower()
-#         ingredient_risks[ing].append(score)
-        
-# # Average risk per ingredient
-# avg_risks = {ing: np.mean(scores) for ing, scores in ingredient_risks.items()}
-
-# # Sort and plot
-# sorted_risks = dict(sorted(avg_risks.items(), key=lambda x: x[1], reverse=True))
-
-# plt.figure(figsize=(10, 6))
-# sns.barplot(x=list(sorted_risks.values()), y=list(sorted_risks.keys()))
-# plt.xlabel("Average Risk Score")
-# plt.ylabel("Ingredient")
-# plt.title("Ingredient Risk Scores")
-# plt.tight_layout()
-# plt.savefig("ingredient_risk_chart.png")
-# plt.show()
-
-# # ----------------- STEP 9: Ingredient-Level Classification -----------------
-# ingredient_classification = {
-#     ing: 'Unsafe' if score > 0.5 else 'Safe'
-#     for ing, score in avg_risks.items()
-# }
-
-# ingredient_df = pd.DataFrame({
-#     'ingredient': list(ingredient_classification.keys()),
-#     'avg_risk_score': list(avg_risks.values()),
-#     'classification': list(ingredient_classification.values())
-# })
-# ingredient_df.to_csv("ingredient_classifications.csv", index=False)
-
-# print("\nAll evaluation results saved!")
